@@ -1,16 +1,49 @@
 'use client';
 
 import { useCart } from '@/hooks/useStore';
-import { Trash2, Plus, Minus, CreditCard, ShoppingBag } from 'lucide-react';
+import { Trash2, Plus, Minus, CreditCard, ShoppingBag, LogIn } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import api from '@/lib/api';
 
 export default function Cart() {
-    const { cartData, isLoading, updateQuantity, removeItem, clearCart } = useCart();
+    const { cartData, isLoading, updateQuantity, removeItem, clearCart, isGuest, guestCount } = useCart();
+    const [guestItems, setGuestItems] = useState<any[]>([]);
+    const [isFetchingGuest, setIsFetchingGuest] = useState(false);
+    const router = useRouter();
 
-    if (isLoading) return <div className="loading-spinner">Loading your cart...</div>;
+    // Fetch guest item details manually since the API cart requires login
+    useEffect(() => {
+        const fetchGuestDetails = async () => {
+            if (isGuest && typeof window !== 'undefined') {
+                const localIds = JSON.parse(localStorage.getItem('guestCart') || '[]');
+                if (localIds.length > 0) {
+                    setIsFetchingGuest(true);
+                    try {
+                        const products = [];
+                        for (const id of localIds) {
+                            const res = await api.get(`/products/${id}`);
+                            products.push({ product: res.data.data, price: res.data.data.price, count: 1 });
+                        }
+                        setGuestItems(products);
+                    } catch (error) {
+                        console.error('Error fetching guest cart details', error);
+                    } finally {
+                        setIsFetchingGuest(false);
+                    }
+                } else {
+                    setGuestItems([]);
+                }
+            }
+        };
+        fetchGuestDetails();
+    }, [isGuest, guestCount]);
 
-    const items = cartData?.data?.products || [];
-    const totalPrice = cartData?.data?.totalCartPrice || 0;
+    if (isLoading || isFetchingGuest) return <div className="loading-spinner">Loading your cart...</div>;
+
+    const items = isGuest ? guestItems : (cartData?.data?.products || []);
+    const totalPrice = isGuest ? guestItems.reduce((acc, item) => acc + item.price, 0) : (cartData?.data?.totalCartPrice || 0);
 
     if (items.length === 0) {
         return (
@@ -56,24 +89,28 @@ export default function Cart() {
                                             <Trash2 size={14} /> Remove
                                         </button>
                                     </div>
-                                    <div className="flex items-center gap-3 bg-gray-100/50 p-1.5 rounded-xl border border-gray-200">
-                                        <button
-                                            onClick={() => updateQuantity({ productId: item.product._id, count: item.count - 1 })}
-                                            disabled={item.count <= 1}
-                                            className="w-9 h-9 rounded-lg bg-white shadow-sm flex items-center justify-center text-primary disabled:opacity-30 hover:bg-primary hover:text-white transition-all"
-                                        >
-                                            <Minus size={16} />
-                                        </button>
-                                        <span className="font-bold text-lg min-w-[24px] text-center">{item.count}</span>
-                                        <button
-                                            onClick={() => updateQuantity({ productId: item.product._id, count: item.count + 1 })}
-                                            className="w-9 h-9 rounded-lg bg-white shadow-sm flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-all"
-                                        >
-                                            <Plus size={16} />
-                                        </button>
-                                    </div>
+
+                                    {!isGuest && (
+                                        <div className="flex items-center gap-3 bg-gray-100/50 p-1.5 rounded-xl border border-gray-200">
+                                            <button
+                                                onClick={() => updateQuantity({ productId: item.product._id, count: item.count - 1 })}
+                                                disabled={item.count <= 1}
+                                                className="w-9 h-9 rounded-lg bg-white shadow-sm flex items-center justify-center text-primary disabled:opacity-30 hover:bg-primary hover:text-white transition-all"
+                                            >
+                                                <Minus size={16} />
+                                            </button>
+                                            <span className="font-bold text-lg min-w-[24px] text-center">{item.count}</span>
+                                            <button
+                                                onClick={() => updateQuantity({ productId: item.product._id, count: item.count + 1 })}
+                                                className="w-9 h-9 rounded-lg bg-white shadow-sm flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-all"
+                                            >
+                                                <Plus size={16} />
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <div className="font-bold text-xl text-secondary min-w-[120px] text-right">
-                                        {(item.price * item.count).toLocaleString()} <span className="text-xs text-gray-400">EGP</span>
+                                        {(item.price * (item.count || 1)).toLocaleString()} <span className="text-xs text-gray-400">EGP</span>
                                     </div>
                                 </div>
                             ))}
@@ -99,9 +136,20 @@ export default function Cart() {
                             <span className="text-2xl font-bold text-primary">{totalPrice.toLocaleString()} <span className="text-sm">EGP</span></span>
                         </div>
 
-                        <Link href="/checkout" className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-3">
-                            <CreditCard size={20} /> Checkout
-                        </Link>
+                        {isGuest ? (
+                            <div className="space-y-4">
+                                <p className="text-xs text-orange-600 font-medium bg-orange-50 p-3 rounded-lg flex items-start gap-2">
+                                    ⚠️ You must be logged in to complete your purchase.
+                                </p>
+                                <Link href="/login" className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-3 bg-secondary hover:bg-primary">
+                                    <LogIn size={20} /> Login to Checkout
+                                </Link>
+                            </div>
+                        ) : (
+                            <Link href="/checkout" className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-3">
+                                <CreditCard size={20} /> Checkout
+                            </Link>
+                        )}
                     </div>
                 </div>
             </div>
