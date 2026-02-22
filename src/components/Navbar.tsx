@@ -1,20 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingCart, Heart, User, LogOut, Menu, X, Search } from 'lucide-react';
+import { ShoppingCart, Heart, User, LogOut, Menu, X, Search, ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useCart, useWishlist } from '@/hooks/useStore';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/lib/api';
 
 export default function Navbar() {
     const [token, setToken] = useState<string | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [categoriesOpen, setCategoriesOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchOpen, setSearchOpen] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
     const { cartData } = useCart();
     const { wishlistData } = useWishlist();
+
+    const { data: categories } = useQuery({
+        queryKey: ['categories'],
+        queryFn: async () => (await api.get('/categories')).data.data,
+    });
 
     const cartCount = cartData?.numOfCartItems || 0;
     const wishlistCount = wishlistData?.data?.length || 0;
@@ -40,7 +48,6 @@ export default function Navbar() {
     const navLinks = [
         { href: '/', label: 'Home' },
         { href: '/products', label: 'Products' },
-        { href: '/categories', label: 'Categories' },
         { href: '/brands', label: 'Brands' },
     ];
 
@@ -63,6 +70,41 @@ export default function Navbar() {
                             {link.label}
                         </Link>
                     ))}
+
+                    {/* Categories Dropdown */}
+                    <div
+                        className="relative group py-2"
+                        onMouseEnter={() => setCategoriesOpen(true)}
+                        onMouseLeave={() => setCategoriesOpen(false)}
+                    >
+                        <button
+                            className={`flex items-center gap-1 font-semibold transition-colors ${pathname.startsWith('/categories') ? 'text-primary' : 'text-gray-500 hover:text-primary'}`}
+                        >
+                            Categories <ChevronDown size={14} className={`transition-transform duration-300 ${categoriesOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        <div className={`absolute left-0 top-[100%] w-60 bg-white rounded-2xl shadow-2xl border border-gray-100 py-3 transition-all duration-300 transform origin-top ${categoriesOpen ? 'opacity-100 scale-100 translate-y-0 visible' : 'opacity-0 scale-95 -translate-y-2 invisible'}`}>
+                            <Link
+                                href="/categories"
+                                className="block px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors"
+                                onClick={() => setCategoriesOpen(false)}
+                            >
+                                All Categories
+                            </Link>
+                            <div className="h-px bg-gray-100 mx-5 my-1" />
+                            {categories?.slice(0, 8).map((cat: any) => (
+                                <Link
+                                    key={cat._id}
+                                    href={`/categories/${cat._id}`}
+                                    className="block px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-primary transition-colors"
+                                    onClick={() => setCategoriesOpen(false)}
+                                >
+                                    {cat.name}
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Search Bar (desktop) */}
@@ -148,6 +190,10 @@ export default function Navbar() {
                                 {link.label}
                             </Link>
                         ))}
+                        {/* Mobile Categories - simplified */}
+                        <Link href="/categories" onClick={() => setMenuOpen(false)} className="font-medium text-gray-600 hover:text-primary py-2 transition-colors">
+                            Categories
+                        </Link>
                     </div>
                 </div>
             )}
