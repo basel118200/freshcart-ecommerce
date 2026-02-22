@@ -3,7 +3,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useState, useEffect } from 'react';
 
-// ── Guest Cart Helpers ──
+// ── Guest Cart Helpers (Now stores {id, count}) ──
 const getGuestCart = () => {
     if (typeof window === 'undefined') return [];
     const cart = localStorage.getItem('guestCart');
@@ -23,17 +23,18 @@ export function useCart() {
 
     useEffect(() => {
         setToken(localStorage.getItem('userToken'));
-        setGuestCount(getGuestCart().length);
+        const cart = getGuestCart();
+        setGuestCount(cart.reduce((acc: number, item: any) => acc + item.count, 0));
     }, []);
 
     const cartQuery = useQuery({
         queryKey: ['cart', !!token],
         queryFn: async () => {
             if (token) return (await api.get('/cart')).data;
-            // Mock structure for guest
+            const cart = getGuestCart();
             return {
                 status: 'success',
-                numOfCartItems: getGuestCart().length,
+                numOfCartItems: cart.reduce((acc: number, item: any) => acc + item.count, 0),
                 data: { products: [], totalCartPrice: 0 }
             };
         },
@@ -44,17 +45,20 @@ export function useCart() {
         mutationFn: async (productId: string) => {
             if (token) return (await api.post('/cart', { productId })).data;
 
-            // Guest Logic
             const cart = getGuestCart();
-            if (!cart.includes(productId)) {
-                cart.push(productId);
-                setGuestCart(cart);
+            const existingItem = cart.find((item: any) => item.id === productId);
+            if (existingItem) {
+                existingItem.count += 1;
+            } else {
+                cart.push({ id: productId, count: 1 });
             }
+            setGuestCart(cart);
             return { status: 'success', message: 'Added to guest cart' };
         },
-        onSuccess: (data) => {
+        onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['cart'] });
-            setGuestCount(getGuestCart().length);
+            const cart = getGuestCart();
+            setGuestCount(cart.reduce((acc: number, item: any) => acc + item.count, 0));
             toast.success('Added to cart!');
         },
         onError: () => {
@@ -65,22 +69,34 @@ export function useCart() {
     const updateQuantity = useMutation({
         mutationFn: async ({ productId, count }: { productId: string; count: number }) => {
             if (token) return (await api.put(`/cart/${productId}`, { count })).data;
-            return { status: 'success' }; // Guest update quantity not fully implemented for simplicity
+
+            const cart = getGuestCart();
+            const item = cart.find((i: any) => i.id === productId);
+            if (item) {
+                item.count = count;
+                setGuestCart(cart);
+            }
+            return { status: 'success' };
         },
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); }
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['cart'] });
+            const cart = getGuestCart();
+            setGuestCount(cart.reduce((acc: number, item: any) => acc + item.count, 0));
+        }
     });
 
     const removeItem = useMutation({
         mutationFn: async (productId: string) => {
             if (token) return (await api.delete(`/cart/${productId}`)).data;
 
-            const cart = getGuestCart().filter((id: string) => id !== productId);
+            const cart = getGuestCart().filter((item: any) => item.id !== productId);
             setGuestCart(cart);
             return { status: 'success' };
         },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['cart'] });
-            setGuestCount(getGuestCart().length);
+            const cart = getGuestCart();
+            setGuestCount(cart.reduce((acc: number, item: any) => acc + item.count, 0));
             toast.success('Item removed');
         }
     });
