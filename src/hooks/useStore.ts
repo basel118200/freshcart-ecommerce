@@ -37,24 +37,39 @@ export function useCart() {
     const qc = useQueryClient();
     const [guestCount, setGuestCount] = useState(0);
 
-    // Sync guest count for UI updates
+    const refresh = () => {
+        const cart = getGuestCart();
+        setGuestCount(cart.reduce((acc: number, item: any) => acc + item.count, 0));
+        qc.invalidateQueries({ queryKey: ['cart'] });
+    };
+
     useEffect(() => {
-        setGuestCount(getGuestCart().reduce((acc: number, item: any) => acc + item.count, 0));
+        refresh();
+        window.addEventListener('storage', refresh);
+        window.addEventListener('cart-update', refresh);
+        return () => {
+            window.removeEventListener('storage', refresh);
+            window.removeEventListener('cart-update', refresh);
+        };
     }, []);
 
     const cartQuery = useQuery({
-        queryKey: ['cart'],
+        queryKey: ['cart', !!getToken()],
         queryFn: async () => {
             const token = getToken();
             if (token) return (await api.get('/cart')).data;
-            return { status: 'success', numOfCartItems: getGuestCart().length, data: { products: [] } };
+            const cart = getGuestCart();
+            return {
+                status: 'success',
+                numOfCartItems: cart.reduce((acc: number, item: any) => acc + item.count, 0),
+                data: { products: [] }
+            };
         }
     });
 
-    const updateSync = () => {
-        qc.invalidateQueries({ queryKey: ['cart'] });
-        setGuestCount(getGuestCart().reduce((acc: number, item: any) => acc + item.count, 0));
-        // Force Navbar to update too
+    const triggerUpdate = () => {
+        window.dispatchEvent(new Event('cart-update'));
+        // Also trigger storage for other tabs
         window.dispatchEvent(new Event('storage'));
     };
 
@@ -70,11 +85,18 @@ export function useCart() {
             setGuestCart(cart);
             return { status: 'success' };
         },
+        onMutate: async () => {
+            // Optimistic update for UI speed
+            setGuestCount(prev => prev + 1);
+        },
         onSuccess: () => {
             toast.success('Added to cart!');
-            updateSync();
+            triggerUpdate();
         },
-        onError: () => toast.error('Check your connection')
+        onError: () => {
+            refresh(); // Rollback on error
+            toast.error('Failed to add');
+        }
     });
 
     const updateQuantity = useMutation({
@@ -90,7 +112,7 @@ export function useCart() {
             }
             return { status: 'success' };
         },
-        onSuccess: () => updateSync()
+        onSuccess: () => triggerUpdate()
     });
 
     const removeItem = useMutation({
@@ -102,7 +124,7 @@ export function useCart() {
         },
         onSuccess: () => {
             toast.success('Removed');
-            updateSync();
+            triggerUpdate();
         }
     });
 
@@ -115,7 +137,7 @@ export function useCart() {
         },
         onSuccess: () => {
             toast.success('Cart cleared');
-            updateSync();
+            triggerUpdate();
         }
     });
 
@@ -123,6 +145,7 @@ export function useCart() {
         cartData: cartQuery.data,
         isLoading: cartQuery.isLoading,
         addToCart: addToCart.mutate,
+        addToCartLoading: addToCart.isPending,
         updateQuantity: updateQuantity.mutate,
         removeItem: removeItem.mutate,
         clearCart: clearCart.mutate,
@@ -136,16 +159,27 @@ export function useWishlist() {
     const qc = useQueryClient();
     const [localWishlist, setLocalWishlist] = useState<string[]>([]);
 
-    useEffect(() => {
+    const refresh = () => {
         setLocalWishlist(getGuestWishlist());
+        qc.invalidateQueries({ queryKey: ['wishlist'] });
+    };
+
+    useEffect(() => {
+        refresh();
+        window.addEventListener('storage', refresh);
+        window.addEventListener('wishlist-update', refresh);
+        return () => {
+            window.removeEventListener('storage', refresh);
+            window.removeEventListener('wishlist-update', refresh);
+        };
     }, []);
 
     const wishlistQuery = useQuery({
-        queryKey: ['wishlist'],
+        queryKey: ['wishlist', !!getToken()],
         queryFn: async () => {
             const token = getToken();
             if (token) return (await api.get('/wishlist')).data;
-            return { data: getGuestWishlist().map((id: string) => ({ id })) };
+            return { data: getGuestWishlist().map((id: string) => ({ id, _id: id })) };
         }
     });
 
@@ -162,9 +196,8 @@ export function useWishlist() {
             return { status: 'success' };
         },
         onSuccess: () => {
-            toast.success('Added to Wishlist ❤️');
-            qc.invalidateQueries({ queryKey: ['wishlist'] });
-            setLocalWishlist(getGuestWishlist());
+            toast.success('Added ❤️');
+            window.dispatchEvent(new Event('wishlist-update'));
             window.dispatchEvent(new Event('storage'));
         }
     });
@@ -180,8 +213,7 @@ export function useWishlist() {
         },
         onSuccess: () => {
             toast.success('Removed');
-            qc.invalidateQueries({ queryKey: ['wishlist'] });
-            setLocalWishlist(getGuestWishlist());
+            window.dispatchEvent(new Event('wishlist-update'));
             window.dispatchEvent(new Event('storage'));
         }
     });
